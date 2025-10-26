@@ -1,0 +1,281 @@
+{
+  "name": "summery",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/karamelo~youtube-transcripts/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"maxRetries\": 4,\n    \"proxyOptions\": {\n        \"useApifyProxy\": true\n    },\n    \"urls\": [\n        \"{{ $json['Youtube URL'] }}\"\n    ]\n} ",
+        "options": {}
+      },
+      "id": "c3267f18-e1ab-4f8d-9b38-8cd5c48e060a",
+      "name": "Apify scrape",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1424,
+        -352
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "zFad9JiQM13wxNlq",
+          "name": "apify"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        -352
+      ],
+      "id": "dfbdb96d-6a79-4e53-b6ec-25573858df54",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize an array to hold the output\nconst output = [];\n\nfor (let item of $input.all()) {\n  // Get the captions array\n  let captions = item.json.captions;\n\n  // Join the captions into a single string\n  let rawText = captions.join(\" \");\n\n  // Step 1: Decode HTML entities (e.g., &#39; to ')\n  let decodedText = rawText\n    .replace(/&#39;/g, \"'\") // Specifically handle apostrophe HTML entity\n    .replace(/&quot;/g, '\"') // Handle double quotes\n    .replace(/&amp;/g, \"&\") // Handle ampersands\n    .replace(/&#\\d+;/g, match => { // Handle any other numeric entities\n      const code = parseInt(match.slice(2, -1));\n      return String.fromCharCode(code);\n    });\n\n  // Step 2: Normalize special characters and clean up\n  let normalizedText = decodedText\n    .replace(/[\\u2018\\u2019]/g, \"'\") // Replace curly single quotes with straight '\n    .replace(/[\\u201C\\u201D]/g, '\"') // Replace curly double quotes with straight \"\n    .replace(/[\\u2026]/g, \"...\") // Replace ellipsis with three dots\n    .replace(/[^\\w\\s.,!?'-]/g, \" \") // Remove other non-standard characters, keep basic punctuation\n    .replace(/\\s+/g, \" \") // Collapse multiple spaces into one\n    .trim();\n\n  // Step 3: Split into potential sentences based on common sentence-ending punctuation\n  let sentences = normalizedText\n    .split(/([.!?])\\s+/)\n    .filter(Boolean); // Split on .!? followed by space, keep delimiters\n\n  // Step 4: Reconstruct the text with proper capitalization and spacing\n  let cleanedText = \"\";\n  for (let i = 0; i < sentences.length; i++) {\n    let part = sentences[i].trim();\n    if (part) {\n      // Capitalize the first letter of each sentence\n      if (part.match(/^[a-z]/i)) {\n        part = part.charAt(0).toUpperCase() + part.slice(1);\n      }\n      cleanedText += part;\n      // Add a space after sentence-ending punctuation, unless it's the last part\n      if (part.match(/[.!?]$/) && i < sentences.length - 1) {\n        cleanedText += \" \";\n      }\n    }\n  }\n\n  // Ensure the text ends with a period if it doesn’t already end with punctuation\n  if (!cleanedText.match(/[.!?]$/)) {\n    cleanedText += \".\";\n  }\n\n  // Create the response object with just videoId and transcript\n  const response = {\n    json: {\n      \"videoId\": item.json.videoId,\n      \"transcript\": cleanedText\n    }\n  };\n\n  // Push the response to the output array\n  output.push(response);\n}\n\n// Return the array of items\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        -128
+      ],
+      "id": "06115af8-1af3-469d-8bc8-e4b2b2fe342b",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Summarize the transcript below.\n\n{{ $json.transcript }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=You are a helpful Youtube video summary agent. You receive a video transcript and provide a concise summary of the video without missing important elements. "
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        1024,
+        -128
+      ],
+      "id": "79843ab8-2a51-4a85-b402-8fccc1b7e1f4",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        880,
+        48
+      ],
+      "id": "98ac0be9-4e9e-40e9-a31b-0ac27de0dfb4",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "AAoupAxOqc2Caa30",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aadc4d64-be11-450a-ad9d-e2e8cec3c304",
+              "name": "videoId",
+              "value": "={{ $('Code').item.json.videoId }}",
+              "type": "string"
+            },
+            {
+              "id": "66e59601-23d2-4a55-9874-69786547453f",
+              "name": "text",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1312,
+        -128
+      ],
+      "id": "76b94a55-5839-4617-95f0-d08ff91fe7b7",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5f29911e-1ebe-41da-b649-3ae25a3aa888",
+              "name": "Youtube URL",
+              "value": "={{ $json.query }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1088,
+        -352
+      ],
+      "id": "a6e55843-2c31-4da2-8e35-c3619dd31e5b",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "sendTo": "skimtiaz.prof@gmail.com",
+        "subject": "Summary",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1488,
+        -128
+      ],
+      "id": "32886796-aa3f-4709-8d88-ede567f1b7e5",
+      "name": "Send a message",
+      "webhookId": "52f6618b-3ddd-4371-b7d3-d4d4a6c86fd2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "NMDxFal1XCp990Mp",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "query": "https://youtu.be/CCFmDbUsJRI?si=8Pd56ZRJcHae6vbt"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Apify scrape": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Apify scrape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e4b7e195-c837-4238-9895-d5b98ceff8da",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "45894b37f1d766687eb41e905a1ede6c1600e57f0ac4faa90c2f341924bdcb9d"
+  },
+  "id": "R6eVWY4ZYt8BYkr0",
+  "tags": []
+}
